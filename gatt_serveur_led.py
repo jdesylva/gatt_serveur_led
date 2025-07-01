@@ -1,54 +1,46 @@
 #!/home/jacques/venv_bt/bin/python3
 import RPi.GPIO as GPIO
-from gi.repository import GLib
-from bluezero import localGATT
+from bluezero import peripheral, adapter
 
 # Configuration GPIO
 LED_PIN = 17
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(LED_PIN, GPIO.OUT)
 
-class LEDService(localGATT.Service):
-    def __init__(self):
-        super().__init__(
-            service_id=0,
-            uuid='0000cafe-0000-1000-8000-00805f9b34fb',
-            primary=True
-        )
+LED_SERVICE_UUID = '0000cafe-0000-1000-8000-00805f9b34fb'
+LED_CHAR_UUID = '0000feed-0000-1000-8000-00805f9b34fb'
 
-    def ajouter_caracteristique_led(self):
-        led_char = localGATT.Characteristic(
-            service=self,
-            uuid='0000feed-0000-1000-8000-00805f9b34fb',
-            characteristic_id=0,
-            flags=['write'],
-            notifying=False,
-            value=[],
-            write_callback=self.led_write
-        )
-        self.add_characteristic(led_char)
-
-    def led_write(self, value, options):
-        if value == [1]:
-            GPIO.output(LED_PIN, GPIO.HIGH)
-            print("🔴 LED allumée")
-        elif value == [0]:
-            GPIO.output(LED_PIN, GPIO.LOW)
-            print("⚫ LED éteinte")
-        else:
-            print(f"Valeur inattendue : {value}")
+def led_write(value, options):
+    print(f"Valeur reçue == {value}")
+    if value == b'\x01':
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        print("🔴 LED allumée")
+    elif value == b'\x00' :
+        GPIO.output(LED_PIN, GPIO.LOW)
+        print("⚫ LED éteinte")
+    else:
+        print(f"Valeur inattendue : {value}")
 
 def main():
-    led_service = LEDService()
-    app = localGATT.Application([led_service])
-    app.start()
-
-    # Maintenant que D-Bus a initialisé le service, on ajoute la caractéristique
-    led_service.ajouter_caracteristique_led()
+    
+    adapter_addr = list(adapter.Adapter.available())[0].address
+    print(f"Adresse == {adapter_addr}")
+    led_server = peripheral.Peripheral(adapter_addr, local_name='LED Server')
+    print(f"led_server1 == {led_server}")
+    led_server.add_service(srv_id=1, uuid=LED_SERVICE_UUID, primary=True)
+    led_server.add_characteristic(srv_id=1, chr_id=1,
+                                  uuid=LED_CHAR_UUID,
+                                  value=[], notifying=False,
+                                  flags=['write'],
+                                  write_callback=led_write)
+    print(f"led_server2 == {led_server}")
+    
+    # Le service et la caractéristique sont maintenant enregistrés
 
     print("🔵 Serveur GATT BLE prêt. Ctrl+C pour quitter.")
+    
     try:
-        GLib.MainLoop().run()
+        led_server.publish()
     except KeyboardInterrupt:
         GPIO.cleanup()
         print("🛑 Arrêt propre du serveur.")
